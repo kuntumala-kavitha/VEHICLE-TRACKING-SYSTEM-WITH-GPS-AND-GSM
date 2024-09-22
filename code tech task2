@@ -1,0 +1,89 @@
+/Arduino Code/
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
+
+TinyGPSPlus gps;
+
+// Define the GPS and GSM pins
+SoftwareSerial gpsSerial(4, 3); // RX, TX for GPS
+SoftwareSerial gsmSerial(7, 8); // RX, TX for GSM
+
+String apiKey = "YOUR_API_KEY"; // If sending data to a web server
+String server = "http://your-server.com/update"; // Server URL for tracking
+
+void setup() {
+  Serial.begin(9600);  // Start Serial communication for debugging
+  gpsSerial.begin(9600);  // Start GPS serial communication
+  gsmSerial.begin(9600);  // Start GSM serial communication
+  
+  // Initialize GSM module
+  sendATCommand("AT");
+  delay(1000);
+  sendATCommand("AT+CSQ");  // Check GSM signal quality
+  delay(1000);
+  sendATCommand("AT+CREG?"); // Check network registration
+  delay(1000);
+}
+
+void loop() {
+  // Read GPS data
+  while (gpsSerial.available() > 0) {
+    if (gps.encode(gpsSerial.read())) {
+      if (gps.location.isUpdated()) {
+        // Get latitude and longitude
+        float latitude = gps.location.lat();
+        float longitude = gps.location.lng();
+
+        // Print the location data to Serial
+        Serial.print("Latitude: ");
+        Serial.println(latitude, 6);
+        Serial.print("Longitude: ");
+        Serial.println(longitude, 6);
+
+        // Send data to server via GSM
+        sendToServer(latitude, longitude);
+      }
+    }
+  }
+}
+
+void sendToServer(float latitude, float longitude) {
+  // Assuming server expects a GET request
+  String url = server + "?api_key=" + apiKey + "&lat=" + String(latitude, 6) + "&lng=" + String(longitude, 6);
+
+  // Send HTTP GET request via GSM module
+  sendATCommand("AT+HTTPINIT");
+  sendATCommand("AT+HTTPPARA=\"CID\",1");
+  sendATCommand("AT+HTTPPARA=\"URL\",\"" + url + "\"");
+  sendATCommand("AT+HTTPACTION=0");  // GET request
+  delay(5000);
+  sendATCommand("AT+HTTPTERM");  // Terminate HTTP session
+}
+
+void sendATCommand(String command) {
+  gsmSerial.println(command);
+  delay(2000);  // Wait for the command to execute
+  while (gsmSerial.available()) {
+    Serial.write(gsmSerial.read());
+  }
+}
+
+/Setting up the Web Server (Optional)/
+/PHP Example for receiving data:/
+<?php
+if (isset($_GET['lat']) && isset($_GET['lng'])) {
+    $lat = $_GET['lat'];
+    $lng = $_GET['lng'];
+    
+    // Save to database or file for tracking
+    $data = "Latitude: $lat, Longitude: $lng\n";
+    file_put_contents('gps_data.txt', $data, FILE_APPEND);
+    
+    echo "Data received: $lat, $lng";
+} else {
+    echo "No data received.";
+}
+
+
+
+
